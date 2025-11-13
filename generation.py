@@ -38,21 +38,89 @@ def apply_temperature(logits: torch.Tensor, temperature: float = 1.0) -> torch.T
     return logits / temperature
 
 
-def top_k_step(logits: torch.Tensor, k: int = 50, temperature: float = 1.0, filter_value: float = -float('Inf')) -> torch.Tensor:
-    # logits: (batch, vocab)
-    logits = apply_temperature(logits, temperature)
+def top_k_step(logits: torch.Tensor, k: int = 50, temperature: float = 1.0, filter_value: float = float('-Inf')) -> torch.Tensor:
+    """ 
+    logits: (batch, vocab)
+    Top-k sampling step.
+    Args:
+        logits: (batch, vocab)
+        k: keep top-k tokens (if <=0 then greedy)
+        temperature: temperature for scaling (>0)
+        filter_value: value to set for filtered logits (default -inf)
+    Returns:
+        next token ids: shape (batch, 1)
+    """
+    # validate shapes / types
+    if logits.dim() != 2:
+        raise ValueError("logits must be 2-D tensor of shape (batch, vocab)")
+    
+    batch, vocab_size = logits.shape
+
     if k <= 0:
-        return greedy_step(logits)
-    values, _ = torch.topk(logits, k)
+        scaled = apply_temperature(logits, temperature)
+        return greedy_step(scaled)
+    
+    # ensure k doesn't exceed vocab size
+    k = min(int(k), vocab_size)
+
+    # apply temperature
+    logits = apply_temperature(logits, temperature)
+
+    # find k-th largest value per row and mask others
+    values, _ = torch.topk(logits, k, dim=-1)
     min_values = values[:, -1].unsqueeze(1)
     logits = torch.where(logits < min_values, torch.full_like(logits, filter_value), logits)
     probs = F.softmax(logits, dim=-1)
+    
+    # torch.multinomial expects non-negative probs rows that sum > 0
+    # rows with all -inf would become NaN/zeros; topk ensures at least k tokens remain,
+    # so this should be safe. Still, we add a tiny eps fallback to be robust.
+    if torch.any(torch.isnan(probs)):
+        # numerical fallback: replace NaNs with 0 and renormalize
+        probs = torch.nan_to_num(probs, nan=0.0)
+        row_sums = probs.sum(dim=-1, keepdim=True)
+        # if any row sums are zero (very unlikely), set uniform over vocab
+        zero_rows = (row_sums == 0).squeeze(1)
+        if zero_rows.any():
+            probs[zero_rows] = torch.ones(vocab_size, device=probs.device) / vocab_size
+        else:
+            probs = probs / row_sums
+
     return torch.multinomial(probs, num_samples=1)
 
 
-def top_p_step(logits: torch.Tensor, p: float = 0.9, temperature: float = 1.0, filter_value: float = -float('Inf')) -> torch.Tensor:
+def top_p_step(
+    logits: torch.Tensor,
+    p: float = 0.9,
+    temperature: float = 1.0,
+    filter_value: float = float('-Inf')
+) -> torch.Tensor:
+    """
+    Apply nucleus (top-p) sampling step.
+
+    Args:
+        logits: (batch, vocab) tensor of logits
+        p: cumulative probability threshold for nucleus sampling (0 < p <= 1)
+        temperature: temperature scaling factor (>0)
+        filter_value: value used to mask filtered logits (-Inf by default)
+
+    Returns:
+        Next token IDs sampled according to top-p probabilities.
+    """
+     # --- 参数检查 ---
+    if temperature <= 0:
+        raise ValueError(f"Temperature must be positive, got {temperature}")
+    if not (0 < p <= 1.0):
+        raise ValueError(f"Top-p value must be in (0, 1], got {p}")
+
     # logits: (batch, vocab)
     logits = apply_temperature(logits, temperature)
+
+    # p=1.0 时，不进行截断，直接按 softmax 采样
+    if p == 1.0:
+        probs = F.softmax(logits, dim=-1)
+        return torch.multinomial(probs, num_samples=1)
+
     sorted_logits, sorted_indices = torch.sort(logits, descending=True)
     cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
     # Remove tokens with cumulative prob above p
@@ -114,12 +182,16 @@ def sample_sequence(model, idx: torch.Tensor, max_new_tokens: Optional[int] = No
         top_k = k if k is not None else 50
         top_p = p if p is not None else 0.9
         temp = temperature if temperature is not None else 1.0
+    
+    # basic validation
+    if max_tokens is None:
+        raise ValueError("max_tokens must be set")
 
     for _ in range(max_tokens):
         idx_cond = idx[:, -context_size:]
         with torch.no_grad():
             logits = model(idx_cond)
-        logits = logits[:, -1, :]
+        logits = logits[:, -1, :] # (batch, vocab)
 
         if strat == 'greedy':
             next_ids = greedy_step(logits)
