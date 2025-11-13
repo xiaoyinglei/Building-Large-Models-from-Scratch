@@ -13,7 +13,7 @@ from environment import prepare_environment
 import config_run
 
 
-def run_training(model, train_loader, val_loader, optimizer, device, train_config, tokenizer, log_every: int = 0):
+def run_training(model, train_loader, val_loader, optimizer, device, train_config, tokenizer, gen_config=None, log_every: int = 0):
     """Execute the training loop.
 
     Args:
@@ -24,6 +24,7 @@ def run_training(model, train_loader, val_loader, optimizer, device, train_confi
         device: Device to use (cpu/cuda/mps).
         train_config: Training configuration (contains num_epochs, eval_freq, etc).
         tokenizer: Token encoder/decoder.
+        gen_config: Generation configuration for text generation (optional).
         log_every: Log batch loss every N steps (0 = no logging).
     """
     print("\n" + "="*70)
@@ -42,6 +43,7 @@ def run_training(model, train_loader, val_loader, optimizer, device, train_confi
         start_context=train_config.start_context,
         tokenizer=tokenizer,
         log_every=log_every,
+        gen_config=gen_config,
     )
     
     print("\n" + "="*70)
@@ -88,6 +90,7 @@ def main():
         device=env.device,
         train_config=env.train_config,
         tokenizer=env.tokenizer,
+        gen_config=env.gen_config,
         log_every=config_run.LOG_EVERY,
     )
     

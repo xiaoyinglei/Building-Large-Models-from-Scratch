@@ -132,6 +132,72 @@ class CustomTrainingConfig(TrainingConfig):
         }
 
 
+@dataclass
+class GenerationConfig:
+    """Text generation hyperparameters configuration."""
+    max_new_tokens: int = 50      # Number of tokens to generate
+    strategy: str = 'greedy'      # Sampling strategy: 'greedy' | 'top_k' | 'top_p'
+    top_k: int = 50               # Top-k parameter (used when strategy='top_k')
+    top_p: float = 0.9            # Top-p nucleus parameter (used when strategy='top_p')
+    temperature: float = 1.0      # Temperature for softmax (future extension)
+
+    @classmethod
+    def get_greedy_config(cls) -> "GenerationConfig":
+        """Get config for greedy sampling (deterministic)."""
+        return cls(
+            max_new_tokens=50,
+            strategy='greedy',
+            top_k=50,
+            top_p=0.9,
+        )
+
+    @classmethod
+    def get_top_k_config(cls, k: int = 50, max_tokens: int = 50) -> "GenerationConfig":
+        """Get config for top-k sampling."""
+        return cls(
+            max_new_tokens=max_tokens,
+            strategy='top_k',
+            top_k=k,
+            top_p=0.9,
+        )
+
+    @classmethod
+    def get_top_p_config(cls, p: float = 0.9, max_tokens: int = 50) -> "GenerationConfig":
+        """Get config for top-p (nucleus) sampling."""
+        return cls(
+            max_new_tokens=max_tokens,
+            strategy='top_p',
+            top_k=50,
+            top_p=p,
+        )
+
+    @classmethod
+    def from_dict(cls, config_dict: Dict[str, Any]) -> "GenerationConfig":
+        """Create GenerationConfig from a dictionary."""
+        instance = cls(**{k: v for k, v in config_dict.items() if k in [
+            'max_new_tokens', 'strategy', 'top_k', 'top_p', 'temperature'
+        ]})
+        return instance
+
+    def update(self, **kwargs) -> None:
+        """Update config parameters dynamically."""
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+            else:
+                raise ValueError(f"Unknown generation config parameter: {key}")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert config to dictionary for serialization."""
+        return {
+            'max_new_tokens': self.max_new_tokens,
+            'strategy': self.strategy,
+            'top_k': self.top_k,
+            'top_p': self.top_p,
+            'temperature': self.temperature,
+        }
+
+
 def create_optimizer(model, learning_rate: float = 3e-4, weight_decay: float = 0.1):
     """
     Create AdamW optimizer for model.

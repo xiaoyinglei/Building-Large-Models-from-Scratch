@@ -203,6 +203,30 @@ custom_cfg.update(learning_rate=1e-4, num_epochs=10)
 params_dict = custom_cfg.to_dict()
 ```
 
+#### `GenerationConfig` - 文本生成参数（新增）✨
+
+```python
+from training_utils import GenerationConfig
+
+# 预定义配置
+greedy_cfg = GenerationConfig.get_greedy_config()
+topk_cfg = GenerationConfig.get_top_k_config(k=50, max_tokens=100)
+topp_cfg = GenerationConfig.get_top_p_config(p=0.9, max_tokens=80)
+
+# 从字典创建
+gen_cfg = GenerationConfig.from_dict({
+    'max_new_tokens': 150,
+    'strategy': 'top_k',
+    'top_k': 50,
+})
+
+# 动态更新参数
+gen_cfg.update(strategy='top_p', top_p=0.92)
+
+# 在训练中使用
+# 详见：文本生成参数调整部分
+```
+
 ---
 
 ### 其他模块简要说明
@@ -214,7 +238,7 @@ params_dict = custom_cfg.to_dict()
 | `data.py` | 数据加载、预处理、创建 DataLoader |
 | `model_builder.py` | 根据配置构建模型的工厂函数 |
 | `train.py` | 训练循环、评估、批量损失跟踪 |
-| `generation.py` | 文本生成（贪心 / top-k / top-p 采样） |
+| `generation.py` | 文本生成（支持 greedy / top-k / top-p 采样、灵活参数调整） |
 | `text_to_token_ids.py` | Token 编码/解码、损失计算 |
 | `visualize.py` | 绘制训练曲线（保存为 PNG） |
 | `main.py` | 训练入口，协调所有模块 |
@@ -449,6 +473,41 @@ config.update(
 params = config.to_dict()
 ```
 
+### 直接使用 `GenerationConfig`
+
+```python
+from training_utils import GenerationConfig
+
+# 方式 1: 使用预定义配置
+greedy_cfg = GenerationConfig.get_greedy_config()
+topk_cfg = GenerationConfig.get_top_k_config(k=50, max_tokens=100)
+topp_cfg = GenerationConfig.get_top_p_config(p=0.9, max_tokens=80)
+
+# 方式 2: 从字典创建
+config = GenerationConfig.from_dict({
+    'max_new_tokens': 100,
+    'strategy': 'top_k',
+    'top_k': 50,
+})
+
+# 方式 3: 直接构造
+config = GenerationConfig(
+    max_new_tokens=150,
+    strategy='top_p',
+    top_p=0.92,
+)
+
+# 方式 4: 动态更新
+config.update(
+    strategy='top_k',
+    top_k=75,
+    max_new_tokens=120
+)
+
+# 方式 5: 序列化为字典
+params = config.to_dict()
+```
+
 ### 集成到自己的脚本
 
 ```python
@@ -487,6 +546,126 @@ train_losses, val_losses, _ = train_model_simple(
 # 处理结果
 print(f"Final train loss: {train_losses[-1]:.4f}")
 print(f"Final val loss: {val_losses[-1]:.4f}")
+```
+
+---
+
+## 文本生成参数调整 (GenerationConfig)
+
+在训练过程中，模型会在每个 epoch 后生成样本文本。现在你可以灵活控制生成参数！
+
+### 方式 1: 使用预定义的生成策略
+
+编辑 `config_run.py`：
+
+```python
+# 选择生成策略
+GENERATION_STRATEGY = 'greedy'  # 选项: 'greedy', 'top_k', 'top_p'
+
+# 保持 custom_gen_params 为空
+custom_gen_params = {}
+```
+
+**生成策略对比：**
+
+| 策略 | 说明 | 适用场景 | 速度 |
+|------|------|---------|------|
+| `greedy` | 总是选最高概率的 token | 快速测试、确定性生成 | 快 |
+| `top_k` | 只从概率最高的 k 个 token 中采样 | 平衡质量和多样性 | 中等 |
+| `top_p` | 核采样，选概率累积到 p 的 token 集合 | 更自然的多样性 | 中等 |
+
+### 方式 2: 使用完全自定义的生成参数
+
+编辑 `config_run.py`：
+
+```python
+custom_gen_params = {
+    'max_new_tokens': 100,    # 生成 100 个新 token
+    'strategy': 'top_k',      # 使用 top-k 采样
+    'top_k': 50,              # 从概率最高的 50 个 token 中采样
+}
+```
+
+或者 top-p 采样：
+
+```python
+custom_gen_params = {
+    'max_new_tokens': 80,     # 生成 80 个新 token
+    'strategy': 'top_p',      # 使用 top-p 采样
+    'top_p': 0.9,             # 选择概率累积到 90% 的 token
+}
+```
+
+### 方式 3: 在代码中动态调整
+
+```python
+from environment import prepare_environment
+from training_utils import GenerationConfig
+
+# 初始化环境
+env = prepare_environment()
+
+# 获取当前的生成配置
+gen_config = env.gen_config
+
+# 动态修改参数
+gen_config.update(
+    strategy='top_p',
+    top_p=0.92,
+    max_new_tokens=150
+)
+
+# 在训练中使用修改后的配置
+from train import train_model_simple
+train_model_simple(
+    model=env.model,
+    train_loader=env.train_loader,
+    val_loader=env.val_loader,
+    optimizer=env.optimizer,
+    device=env.device,
+    num_epochs=env.train_config.num_epochs,
+    eval_freq=env.train_config.eval_freq,
+    eval_iter=env.train_config.eval_iter,
+    start_context=env.train_config.start_context,
+    tokenizer=env.tokenizer,
+    gen_config=gen_config,  # ← 传递修改后的配置
+)
+```
+
+### 生成参数详解
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `max_new_tokens` | int | 50 | 每次生成时产生的新 token 数量 |
+| `strategy` | str | 'greedy' | 采样策略：'greedy' / 'top_k' / 'top_p' |
+| `top_k` | int | 50 | Top-k 的 k 值（仅在 strategy='top_k' 时使用） |
+| `top_p` | float | 0.9 | Top-p 的 p 值（仅在 strategy='top_p' 时使用），范围 0~1 |
+| `temperature` | float | 1.0 | 温度参数（未来扩展，目前无效） |
+
+### 调参建议
+
+**快速测试：**
+```python
+GENERATION_STRATEGY = 'greedy'
+custom_gen_params = {}
+```
+
+**生成多样化文本：**
+```python
+custom_gen_params = {
+    'max_new_tokens': 100,
+    'strategy': 'top_p',
+    'top_p': 0.9,
+}
+```
+
+**平衡质量和多样性：**
+```python
+custom_gen_params = {
+    'max_new_tokens': 80,
+    'strategy': 'top_k',
+    'top_k': 40,
+}
 ```
 
 ---
@@ -570,6 +749,47 @@ train_loader = create_dataloader_v1(
 - 使用更大的数据集（MB 级别）
 - 增加模型大小（`n_layers`, `emb_dim`）
 - 使用更好的采样策略（见 `generation.py`）
+
+### Q: 生成的文本重复太多怎么办？
+
+**A:** 改用 `top_k` 或 `top_p` 采样，避免 `greedy` 策略。在 `config_run.py` 中修改：
+
+```python
+custom_gen_params = {
+    'max_new_tokens': 100,
+    'strategy': 'top_k',      # 改为 top_k 或 top_p
+    'top_k': 50,              # 从前 50 个概率最高的 token 中随机采样
+}
+```
+
+或使用核采样（更自然的多样性）：
+
+```python
+custom_gen_params = {
+    'max_new_tokens': 100,
+    'strategy': 'top_p',      # 核采样
+    'top_p': 0.9,             # 选择累积概率达 90% 的 token
+}
+```
+
+### Q: 生成速度太慢或太快怎么办？
+
+**A:** 调整 `max_new_tokens` 和采样策略：
+
+```python
+# 想要快速生成
+custom_gen_params = {
+    'max_new_tokens': 50,     # 减少生成 token 数
+    'strategy': 'greedy',     # 贪心最快
+}
+
+# 想要高质量（较慢）
+custom_gen_params = {
+    'max_new_tokens': 200,    # 生成更多 token
+    'strategy': 'top_p',      # 核采样较慢但质量好
+    'top_p': 0.95,
+}
+```
 
 ---
 

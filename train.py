@@ -98,7 +98,8 @@ def train_model_simple(
     start_context,
     tokenizer,
     log_every: int = 0,
-    max_batch_losses_saved: Optional[int] = None
+    max_batch_losses_saved: Optional[int] = None,
+    gen_config=None
 ) -> Tuple[List[float], List[float], List[int]]:
     """
     Initialize lists to track losses and tokens seen
@@ -108,6 +109,22 @@ def train_model_simple(
     - defensive handling of eval_freq/log_every
     - safer tokens counting
     - optional limit on saved batch_losses to avoid unbounded memory growth
+    - optional GenerationConfig for flexible text generation control
+    
+    Args:
+        model: Model to train.
+        train_loader: Training data loader.
+        val_loader: Validation data loader.
+        optimizer: Optimizer for model updates.
+        device: Device to use (cpu/cuda/mps).
+        num_epochs: Number of training epochs.
+        eval_freq: Evaluate every N steps.
+        eval_iter: Number of batches for evaluation.
+        start_context: Initial text for generation samples.
+        tokenizer: Token encoder/decoder.
+        log_every: Log batch loss every N steps (0 = no logging).
+        max_batch_losses_saved: Max batch losses to keep in memory.
+        gen_config: GenerationConfig instance for flexible text generation (optional).
     """
     # ensure model on device
     model.to(device)
@@ -201,13 +218,7 @@ def train_model_simple(
                         f"Train loss {train_loss:.3f}, Val loss {val_loss:.3f}")
                 except Exception as e:
                     print(f"Warning: evaluation failed at step {global_step} with error: {e}")
-                    
-        # Print a sample text after each epoch
-        try:
-            generate_and_print_sample(model, tokenizer, device, start_context)
-        except Exception as e:
-            print(f"Warning: sample generation failed: {e}")
-
+        
         # Ensure we have at least one recorded evaluation per epoch.
         # This appends a train/val loss entry even if eval_freq did not trigger.
         if eval_freq_enabled:
@@ -220,6 +231,13 @@ def train_model_simple(
             except Exception as e:
                 # If evaluation fails for any reason, skip but continue training
                  print(f"Warning: end-of-epoch evaluation failed: {e}")
+
+    # Print a sample text after each epoch
+    try:
+        generate_and_print_sample(model, tokenizer, device, start_context, gen_config=gen_config)
+    except Exception as e:
+        print(f"Warning: sample generation failed: {e}")
+
 
     # Visualization (if available) -- save a plot of losses
     try:
@@ -243,7 +261,17 @@ def evaluate_model(model, train_loader, val_loader, device, eval_iter):
     return train_loss, val_loss
 
 
-def generate_and_print_sample(model, tokenizer, device, start_context):
+def generate_and_print_sample(model, tokenizer, device, start_context, gen_config=None):
+    """
+    Generate and print a sample text from the model.
+    
+    Args:
+        model: The language model to generate from.
+        tokenizer: Token encoder/decoder.
+        device: Device to use for generation.
+        start_context: Initial text to start generation.
+        gen_config: GenerationConfig instance (optional). If None, uses default.
+    """
     model.eval()
     context_size = model.pos_emb.weight.shape[0]
     encoded = text_to_token_ids(start_context, tokenizer).to(device)
@@ -251,9 +279,15 @@ def generate_and_print_sample(model, tokenizer, device, start_context):
         # Prefer the centralized generation utilities if available
         try:
             from generation import sample_sequence
-            token_ids = sample_sequence(model=model, idx=encoded, max_new_tokens=50, context_size=context_size, strategy='greedy')
+            # Support both GenerationConfig and legacy parameter style
+            if gen_config is not None:
+                token_ids = sample_sequence(model=model, idx=encoded, 
+                                           context_size=context_size, config=gen_config)
+            else:
+                token_ids = sample_sequence(model=model, idx=encoded, 
+                                           max_new_tokens=50, context_size=context_size, strategy='greedy')
         except Exception:
             token_ids = generate_text_simple(model=model, idx=encoded, max_new_tokens=50, context_size=context_size)
     decoded_text = token_ids_to_text(token_ids, tokenizer)
-    #print(decoded_text.replace("\n", " "))  # Compact print format
+    print(decoded_text.replace("\n", " "))  # Compact print format
     model.train()

@@ -19,16 +19,16 @@ USE_DEFAULT = True  # Use default large config (overrides USE_SMALL if True)
 CONFIG_PATH = "config.json"  # Custom config file path (only used if USE_SMALL=False and USE_DEFAULT=False)
 
 # Training mode selector
-QUICK_MODE = True  # True = 1 epoch quick test, False = full training config
-CUSTOM_MODE = False  # True = use custom_params (overrides QUICK_MODE and USE_SMALL)
+QUICK_MODE = False  # True = 1 epoch quick test, False = full training config
+CUSTOM_MODE = True  # True = use custom_params (overrides QUICK_MODE and USE_SMALL)
 
 # Custom training parameters (only used when CUSTOM_MODE=True)
 # Uncomment and modify to customize training. All parameters are optional and will override defaults.
 custom_params = {
     # === Training hyperparameters ===
-    'num_epochs': 5,              # Number of training epochs
-    'batch_size': 16,             # Batch size (8, 16, 32, 64, ...)
-    'learning_rate': 1e-3,        # Learning rate (e.g., 3e-4, 1e-3, 5e-4)
+    'num_epochs': 10,              # Number of training epochs
+    'batch_size': 64,             # Batch size (8, 16, 32, 64, ...)
+    'learning_rate': 5e-4,        # Learning rate (e.g., 3e-4, 1e-3, 5e-4)
     'weight_decay': 0.05,         # L2 regularization strength (0.0 to 0.5)
     
     # === Evaluation and logging ===
@@ -55,6 +55,24 @@ custom_params = {
 
 # Batch size (optional override for quick/full mode only)
 BATCH_SIZE = None  # None = use default from config, or specify a number like 8, 16, 32
+
+# === Text Generation Configuration ===
+# Customize text generation behavior during training (used for generating sample text at each epoch)
+# You can either set custom_gen_params (dict) or use a pre-defined strategy
+
+# Option 1: Use pre-defined generation strategy (set CUSTOM_GEN_MODE to one of these)
+GENERATION_STRATEGY = 'greedy'  # Options: 'greedy', 'top_k', 'top_p'
+
+
+# Option 2: Custom generation parameters (only used when this dict is not empty)
+custom_gen_params = {
+    # Uncomment to customize generation:
+    # 'max_new_tokens': 100,      # Number of tokens to generate (default: 50)
+    # 'strategy': 'top_k',        # Sampling strategy: 'greedy' | 'top_k' | 'top_p' (default: 'greedy')
+    # 'top_k': 50,                # Top-k value for top_k sampling (default: 50)
+    # 'top_p': 0.9,               # Top-p value for nucleus sampling (default: 0.9)
+    # 'temperature': 1.0,         # Temperature (future extension, default: 1.0)
+}
 
 # Random seed
 SEED = 123

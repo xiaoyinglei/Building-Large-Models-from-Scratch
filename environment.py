@@ -2,7 +2,8 @@
 
 Provides a single entry function `prepare_environment()` which returns a
 RuntimeEnv dataclass holding all runtime handles used by training (device,
-tokenizer, config, model, dataloaders, training config and optimizer).
+tokenizer, config, model, dataloaders, training config, generation config
+and optimizer).
 
 All runtime objects are created and configured for a unified training
 environment, ensuring device consistency, proper initialization, and
@@ -17,7 +18,8 @@ import tiktoken
 from config import load_config_from_file, get_small_config, get_default_config
 from data import create_dataloader_v1, text_data, print_text_stats
 from model_builder import build_model, print_model_info
-from training_utils import TrainingConfig, CustomTrainingConfig, create_optimizer, get_device, print_device_info
+from training_utils import (TrainingConfig, CustomTrainingConfig, GenerationConfig,
+                             create_optimizer, get_device, print_device_info)
 import config_run
 
 
@@ -31,6 +33,7 @@ class RuntimeEnv:
     train_loader: object
     val_loader: object
     train_config: TrainingConfig
+    gen_config: GenerationConfig
     optimizer: object
 
 
@@ -114,6 +117,39 @@ def prepare_optimizer(model, train_config: TrainingConfig):
     )
     print(f"✓ Optimizer initialized (lr={train_config.learning_rate}, weight_decay={train_config.weight_decay})")
     return optimizer
+
+
+def prepare_generation_config() -> GenerationConfig:
+    """
+    Prepare generation config for text generation during training.
+    
+    Reads from config_run.py:
+    - If custom_gen_params is non-empty, uses those parameters
+    - Otherwise, uses the pre-defined GENERATION_STRATEGY
+    """
+    if config_run.custom_gen_params:
+        # Custom generation parameters provided
+        gen_config = GenerationConfig.from_dict(config_run.custom_gen_params)
+        print(f"✓ Using custom generation config")
+        print(f"  - Strategy: {gen_config.strategy}, Max tokens: {gen_config.max_new_tokens}")
+        if gen_config.strategy == 'top_k':
+            print(f"  - Top-k: {gen_config.top_k}")
+        elif gen_config.strategy == 'top_p':
+            print(f"  - Top-p: {gen_config.top_p}")
+    else:
+        # Use pre-defined strategy
+        strategy = getattr(config_run, 'GENERATION_STRATEGY', 'greedy')
+        if strategy == 'greedy':
+            gen_config = GenerationConfig.get_greedy_config()
+        elif strategy == 'top_k':
+            gen_config = GenerationConfig.get_top_k_config()
+        elif strategy == 'top_p':
+            gen_config = GenerationConfig.get_top_p_config()
+        else:
+            gen_config = GenerationConfig.get_greedy_config()  # Default fallback
+        print(f"✓ Using {strategy} generation strategy")
+    
+    return gen_config
 
 
 def verify_device_consistency(device: str, model, optimizer):
@@ -208,7 +244,10 @@ def prepare_environment() -> RuntimeEnv:
     # Step 8: Optimizer
     optimizer = prepare_optimizer(model, train_config)
 
-    # Step 9: Verify all components are on the same device
+    # Step 9: Generation config
+    gen_config = prepare_generation_config()
+
+    # Step 10: Verify all components are on the same device
     verify_device_consistency(device, model, optimizer)
 
     return RuntimeEnv(
@@ -219,5 +258,6 @@ def prepare_environment() -> RuntimeEnv:
         train_loader=train_loader,
         val_loader=val_loader,
         train_config=train_config,
+        gen_config=gen_config,
         optimizer=optimizer,
     )
