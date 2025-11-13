@@ -71,7 +71,7 @@ custom_gen_params = {
     # 'strategy': 'top_k',        # Sampling strategy: 'greedy' | 'top_k' | 'top_p' (default: 'greedy')
     # 'top_k': 50,                # Top-k value for top_k sampling (default: 50)
     # 'top_p': 0.9,               # Top-p value for nucleus sampling (default: 0.9)
-    # 'temperature': 1.0,         # Temperature (future extension, default: 1.0)
+    # 'temperature': 0.8,         # Temperature scaling (<1=sharper, >1=flatter, default: 1.0)
 }
 
 # Random seed

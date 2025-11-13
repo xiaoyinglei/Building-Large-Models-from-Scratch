@@ -20,8 +20,27 @@ def greedy_step(logits: torch.Tensor) -> torch.Tensor:
     return torch.argmax(logits, dim=-1, keepdim=True)
 
 
-def top_k_step(logits: torch.Tensor, k: int = 50, filter_value: float = -float('Inf')) -> torch.Tensor:
+def apply_temperature(logits: torch.Tensor, temperature: float = 1.0) -> torch.Tensor:
+    """Apply temperature scaling to logits.
+    
+    Args:
+        logits: (batch, vocab) tensor of logits
+        temperature: Temperature parameter (>0). Lower = more deterministic, Higher = more random
+                    1.0 = no change, <1.0 = sharpen distribution, >1.0 = flatten distribution
+    
+    Returns:
+        Temperature-scaled logits
+    """
+    if temperature <= 0:
+        raise ValueError(f"Temperature must be positive, got {temperature}")
+    if temperature == 1.0:
+        return logits
+    return logits / temperature
+
+
+def top_k_step(logits: torch.Tensor, k: int = 50, temperature: float = 1.0, filter_value: float = -float('Inf')) -> torch.Tensor:
     # logits: (batch, vocab)
+    logits = apply_temperature(logits, temperature)
     if k <= 0:
         return greedy_step(logits)
     values, _ = torch.topk(logits, k)
@@ -31,8 +50,9 @@ def top_k_step(logits: torch.Tensor, k: int = 50, filter_value: float = -float('
     return torch.multinomial(probs, num_samples=1)
 
 
-def top_p_step(logits: torch.Tensor, p: float = 0.9, filter_value: float = -float('Inf')) -> torch.Tensor:
+def top_p_step(logits: torch.Tensor, p: float = 0.9, temperature: float = 1.0, filter_value: float = -float('Inf')) -> torch.Tensor:
     # logits: (batch, vocab)
+    logits = apply_temperature(logits, temperature)
     sorted_logits, sorted_indices = torch.sort(logits, descending=True)
     cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
     # Remove tokens with cumulative prob above p
@@ -50,6 +70,7 @@ def top_p_step(logits: torch.Tensor, p: float = 0.9, filter_value: float = -floa
 def sample_sequence(model, idx: torch.Tensor, max_new_tokens: Optional[int] = None, 
                     context_size: int = 256, strategy: Optional[str] = None, 
                     k: Optional[int] = None, p: Optional[float] = None,
+                    temperature: Optional[float] = None,
                     config: Optional["GenerationConfig"] = None) -> torch.Tensor:
     """Generate tokens using chosen sampling strategy.
 
@@ -63,6 +84,7 @@ def sample_sequence(model, idx: torch.Tensor, max_new_tokens: Optional[int] = No
         strategy: 'greedy' | 'top_k' | 'top_p' (deprecated, use config instead)
         k: top-k parameter (deprecated, use config instead)
         p: top-p nucleus parameter (deprecated, use config instead)
+        temperature: temperature parameter (deprecated, use config instead)
         config: GenerationConfig instance (preferred approach)
 
     Returns:
@@ -71,11 +93,11 @@ def sample_sequence(model, idx: torch.Tensor, max_new_tokens: Optional[int] = No
     Examples:
         # Old style (still supported for backward compatibility):
         tokens = sample_sequence(model, idx, max_new_tokens=50, 
-                                context_size=256, strategy='top_k', k=50)
+                                context_size=256, strategy='top_k', k=50, temperature=0.8)
         
         # New style with GenerationConfig:
         from training_utils import GenerationConfig
-        gen_cfg = GenerationConfig(max_new_tokens=50, strategy='top_k', top_k=50)
+        gen_cfg = GenerationConfig(max_new_tokens=50, strategy='top_k', top_k=50, temperature=0.8)
         tokens = sample_sequence(model, idx, context_size=256, config=gen_cfg)
     """
     # Handle config vs legacy parameters
@@ -84,12 +106,14 @@ def sample_sequence(model, idx: torch.Tensor, max_new_tokens: Optional[int] = No
         strat = config.strategy
         top_k = config.top_k
         top_p = config.top_p
+        temp = config.temperature
     else:
         # Use legacy parameters (with defaults for backward compatibility)
         max_tokens = max_new_tokens if max_new_tokens is not None else 50
         strat = strategy if strategy is not None else 'greedy'
         top_k = k if k is not None else 50
         top_p = p if p is not None else 0.9
+        temp = temperature if temperature is not None else 1.0
 
     for _ in range(max_tokens):
         idx_cond = idx[:, -context_size:]
@@ -100,9 +124,9 @@ def sample_sequence(model, idx: torch.Tensor, max_new_tokens: Optional[int] = No
         if strat == 'greedy':
             next_ids = greedy_step(logits)
         elif strat == 'top_k':
-            next_ids = top_k_step(logits, k=top_k)
+            next_ids = top_k_step(logits, k=top_k, temperature=temp)
         elif strat == 'top_p':
-            next_ids = top_p_step(logits, p=top_p)
+            next_ids = top_p_step(logits, p=top_p, temperature=temp)
         else:
             raise ValueError(f"Unknown generation strategy: {strat}")
 

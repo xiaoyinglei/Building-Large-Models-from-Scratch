@@ -640,7 +640,7 @@ train_model_simple(
 | `strategy` | str | 'greedy' | 采样策略：'greedy' / 'top_k' / 'top_p' |
 | `top_k` | int | 50 | Top-k 的 k 值（仅在 strategy='top_k' 时使用） |
 | `top_p` | float | 0.9 | Top-p 的 p 值（仅在 strategy='top_p' 时使用），范围 0~1 |
-| `temperature` | float | 1.0 | 温度参数（未来扩展，目前无效） |
+| `temperature` | float | 1.0 | 温度参数：<1.0 使生成更确定，>1.0 使生成更随机（推荐 0.5~2.0） |
 
 ### 调参建议
 
@@ -665,6 +665,26 @@ custom_gen_params = {
     'max_new_tokens': 80,
     'strategy': 'top_k',
     'top_k': 40,
+}
+```
+
+**生成更确定和连贯的文本（降低温度）：**
+```python
+custom_gen_params = {
+    'max_new_tokens': 100,
+    'strategy': 'top_p',
+    'top_p': 0.9,
+    'temperature': 0.7,  # <1.0 使输出更连贯确定
+}
+```
+
+**生成更创意和多样的文本（提高温度）：**
+```python
+custom_gen_params = {
+    'max_new_tokens': 100,
+    'strategy': 'top_p',
+    'top_p': 0.95,
+    'temperature': 1.3,  # >1.0 使输出更随机创意
 }
 ```
 
@@ -703,6 +723,18 @@ custom_gen_params = {
 3. 增加 dropout 比率（0.2 ~ 0.3）
 4. 检查数据是否有问题
 5. 尝试更小的 batch_size
+
+### Q: 如何调整生成文本的质量和多样性？
+
+**A:** 使用 `temperature` 和 `strategy` 参数：
+- **更连贯确定的文本**：`temperature=0.6~0.8` + `strategy='top_k'`
+- **平衡质量和多样性**：`temperature=1.0` + `strategy='top_p', top_p=0.9`
+- **更创意随机的文本**：`temperature=1.2~1.5` + `strategy='top_p', top_p=0.95`
+
+温度参数工作原理：
+- `temperature < 1.0`：分布更尖锐，模型倾向于选择概率最高的 token
+- `temperature = 1.0`：保持原始概率分布（默认）
+- `temperature > 1.0`：分布更平坦，模型会尝试更多可能的 token
 
 ### Q: 如何保存训练好的模型？
 
