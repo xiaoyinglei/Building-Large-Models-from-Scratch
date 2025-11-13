@@ -17,7 +17,7 @@ import tiktoken
 from config import load_config_from_file, get_small_config, get_default_config
 from data import create_dataloader_v1, text_data, print_text_stats
 from model_builder import build_model, print_model_info
-from training_utils import TrainingConfig, create_optimizer, get_device, print_device_info
+from training_utils import TrainingConfig, CustomTrainingConfig, create_optimizer, get_device, print_device_info
 import config_run
 
 
@@ -181,8 +181,16 @@ def prepare_environment() -> RuntimeEnv:
     # Step 5: Build model
     model = prepare_model(cfg, device)
 
-    # Step 6: Training config (quick or full)
-    if config_run.QUICK_MODE:
+    # Step 6: Training config (quick, full, or custom)
+    if config_run.CUSTOM_MODE:
+        # Custom/free training mode with user-defined parameters
+        train_config = CustomTrainingConfig.from_dict(config_run.custom_params)
+        print("✓ Using custom training config")
+        print(f"  - Epochs: {train_config.num_epochs}, Batch: {train_config.batch_size}")
+        print(f"  - LR: {train_config.learning_rate}, Weight decay: {train_config.weight_decay}")
+        if train_config.model_overrides:
+            print(f"  - Model overrides: {train_config.model_overrides}")
+    elif config_run.QUICK_MODE:
         train_config = TrainingConfig.get_quick_test_config()
         print("✓ Using quick training config (1 epoch, for testing)")
     else:

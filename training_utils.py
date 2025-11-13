@@ -3,8 +3,8 @@ Training utilities and configurations.
 Provides training parameter management and optimization helpers.
 """
 import torch
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any
 
 
 @dataclass
@@ -52,6 +52,84 @@ class TrainingConfig:
             start_context="Every effort moves you",
             num_workers=0,
         )
+
+
+@dataclass
+class CustomTrainingConfig(TrainingConfig):
+    """
+    Extended training config for custom/free training mode.
+    
+    Allows users to set any training parameter with full flexibility.
+    Supports model architecture customization for future extensions.
+    
+    Example:
+        custom_cfg = CustomTrainingConfig(
+            num_epochs=5,
+            batch_size=16,
+            learning_rate=1e-3,
+            weight_decay=0.05,
+            eval_freq=25,
+            eval_iter=3,
+            max_length=512,
+            stride=256,
+            start_context="Once upon a time",
+            num_workers=2,
+            model_overrides={'n_heads': 8, 'n_layers': 6}  # Optional model tweaks
+        )
+    """
+    model_overrides: Dict[str, Any] = field(default_factory=dict)
+    """Optional overrides for model config (e.g., {'n_heads': 8, 'n_layers': 6})"""
+
+    @classmethod
+    def from_dict(cls, config_dict: Dict[str, Any]) -> "CustomTrainingConfig":
+        """
+        Create CustomTrainingConfig from a dictionary.
+        
+        Args:
+            config_dict: Dictionary with training parameters and optional model_overrides.
+        
+        Returns:
+            CustomTrainingConfig instance.
+        """
+        # Extract model_overrides if present
+        model_overrides = config_dict.pop('model_overrides', {})
+        
+        # Create instance with remaining parameters
+        instance = cls(**config_dict)
+        instance.model_overrides = model_overrides
+        return instance
+
+    def update(self, **kwargs) -> None:
+        """
+        Update config parameters dynamically.
+        
+        Args:
+            **kwargs: Parameter name-value pairs to update.
+        
+        Example:
+            cfg.update(learning_rate=1e-4, num_epochs=20)
+        """
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+            else:
+                raise ValueError(f"Unknown config parameter: {key}")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert config to dictionary for serialization."""
+        return {
+            'num_epochs': self.num_epochs,
+            'batch_size': self.batch_size,
+            'learning_rate': self.learning_rate,
+            'weight_decay': self.weight_decay,
+            'eval_freq': self.eval_freq,
+            'eval_iter': self.eval_iter,
+            'max_length': self.max_length,
+            'stride': self.stride,
+            'start_context': self.start_context,
+            'num_workers': self.num_workers,
+            'model_overrides': self.model_overrides,
+        }
 
 
 def create_optimizer(model, learning_rate: float = 3e-4, weight_decay: float = 0.1):
